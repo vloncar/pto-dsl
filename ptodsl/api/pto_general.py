@@ -69,6 +69,22 @@ def store(source, dest):
     _pto.TStoreOp(None, source, dest)
 
 
+def print(format, scalar):
+    """
+        Example:
+        `print("hello %d\n", const(5))`
+        is equivalent to
+        `cce::printf("hello%d\n", 5);`
+
+        NOTE: may not print if the print buffer is full from previous
+        prints (typical when printing big tiles).
+    """
+    if isinstance(scalar, Value):
+        scalar = _unwrap(scalar)
+
+    _pto.print_(format, scalar)
+
+
 __all__ = [
     "get_block_idx",
     "get_subblock_idx",
@@ -81,4 +97,5 @@ __all__ = [
     "alloc_tile",
     "load",
     "store",
+    "print",
 ]

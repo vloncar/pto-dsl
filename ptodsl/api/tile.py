@@ -84,6 +84,10 @@ def subset(source, offsets, sizes):
     return _pto.subset(source, offset_vals, sizes)
 
 
+def print(source):
+    _pto.tprint(source)
+
+
 __all__ = [
     "mov",
     "add",

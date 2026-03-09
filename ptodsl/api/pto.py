@@ -12,6 +12,7 @@ from .pto_general import (
     slice_view,
     store,
     vector_section,
+    print,
 )
 from .synchronization import barrier, record_event, record_wait_pair, wait_event
 from .type_def import (
@@ -51,6 +52,7 @@ __all__ = [
     "alloc_tile",
     "load",
     "store",
+    "print",
     "record_event",
     "wait_event",
     "record_wait_pair",
