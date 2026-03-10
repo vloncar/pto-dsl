@@ -1,4 +1,5 @@
 from mlir.dialects import pto as _pto
+from mlir.ir import BoolAttr
 
 from .scalar import _unwrap
 
@@ -91,6 +92,10 @@ def row_sum(src, tmp, dst):
     _pto.TRowSumOp(src=src, tmp=tmp, dst=dst)
 
 
+def col_sum(src, tmp, dst, is_binary=True):
+    _pto.TColSumOp(src=src,  dst=dst, tmp=tmp, isBinary=BoolAttr.get(is_binary))
+
+
 def subset(source, offsets, sizes):
     offset_vals = [_unwrap(v) for v in offsets]
     return _pto.subset(source, offset_vals, sizes)
@@ -120,5 +125,6 @@ __all__ = [
     "matmul_acc",
     "extract",
     "row_sum",
+    "col_sum",
     "subset",
 ]
