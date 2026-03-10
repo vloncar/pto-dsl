@@ -11,9 +11,23 @@ torch.manual_seed(0)
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
 _DEVICE = get_test_device()
-_ROWSUM_LIB_PATH = os.path.join(_DIR, "rowsum_lib.so")
-_COLSUM_LIB_PATH = os.path.join(_DIR, "colsum_lib.so")
 _BLOCK_DIM = 24
+
+_KERNELS = [
+    "rowsum",
+    "rowmin",
+    "rowmax",
+    # "rowprod",
+    "colsum",
+    # "colmin",
+    # "colmax",
+    # "colprod",
+]
+
+_LIB_PATHS = {
+    name: os.path.join(_DIR, f"{name}_lib.so")
+    for name in _KERNELS
+}
 
 _SHAPES = [
     (1, 1),
@@ -42,30 +56,18 @@ _SHAPE_IDS = [f"batch{batch}-cols{n_cols}" for batch, n_cols in _SHAPES]
 
 
 @pytest.fixture(scope="session")
-def compiled_sum():
+def compiled_kernels():
     subprocess.check_call(["bash", os.path.join(_DIR, "compile.sh")], cwd=_DIR)
     yield
-    if os.path.exists(_ROWSUM_LIB_PATH):
-        os.remove(_ROWSUM_LIB_PATH)
-    if os.path.exists(_COLSUM_LIB_PATH):
-        os.remove(_COLSUM_LIB_PATH)
+    for path in _LIB_PATHS.values():
+        if os.path.exists(path):
+            os.remove(path)
 
 
-def test_build_rowsum(compiled_sum):
-    assert os.path.exists(_ROWSUM_LIB_PATH)
-
-
-def test_build_colsum(compiled_sum):
-    assert os.path.exists(_COLSUM_LIB_PATH)
-
-
-@pytest.mark.require_npu
-@pytest.mark.parametrize("batch, n_cols", _SHAPES, ids=_SHAPE_IDS)
-def test_rowsum_precision(compiled_sum, batch, n_cols):
-    import torch_npu  # noqa: F401
-
-    lib = ctypes.CDLL(_ROWSUM_LIB_PATH)
-    lib.call_rowsum.argtypes = [
+def _load_kernel(name):
+    lib = ctypes.CDLL(_LIB_PATHS[name])
+    fn = getattr(lib, f"call_{name}")
+    fn.argtypes = [
         ctypes.c_uint32,
         ctypes.c_void_p,
         ctypes.c_void_p,
@@ -73,16 +75,72 @@ def test_rowsum_precision(compiled_sum, batch, n_cols):
         ctypes.c_uint32,
         ctypes.c_uint32,
     ]
-    lib.call_rowsum.restype = None
+    fn.restype = None
+    return fn
+
+
+def _reference(name, x):
+    if name == "rowsum":
+        return x.float().sum(dim=-1)
+    if name == "rowmin":
+        return x.float().amin(dim=-1)
+    if name == "rowmax":
+        return x.float().amax(dim=-1)
+    if name == "rowprod":
+        return x.float().prod(dim=-1)
+    if name == "colsum":
+        return x.float().sum(dim=0)
+    if name == "colmin":
+        return x.float().amin(dim=0)
+    if name == "colmax":
+        return x.float().amax(dim=0)
+    if name == "colprod":
+        return x.float().prod(dim=0)
+    raise ValueError(f"Unknown kernel: {name}")
+
+
+def _output_shape(name, batch, n_cols):
+    return (batch,) if name.startswith("row") else (n_cols,)
+
+
+def _make_input(name, batch, n_cols, device):
+    if name.endswith("prod"):
+        return torch.empty(batch, n_cols, device=device, dtype=torch.float32).uniform_(0.5, 1.5)
+    return torch.randn(batch, n_cols, device=device, dtype=torch.float32)
+
+
+def _tolerances(name):
+    if name.endswith("prod"):
+        return {"atol": 1e-3, "rtol": 1e-3}
+    return {"atol": 1e-4, "rtol": 0}
+
+
+@pytest.mark.parametrize("name", _KERNELS)
+def test_build_kernel(compiled_kernels, name):
+    assert os.path.exists(_LIB_PATHS[name])
+
+
+@pytest.mark.require_npu
+@pytest.mark.parametrize("name", _KERNELS)
+@pytest.mark.parametrize("batch, n_cols", _SHAPES, ids=_SHAPE_IDS)
+def test_kernel_precision(compiled_kernels, name, batch, n_cols):
+    import torch_npu  # noqa: F401
 
     torch.npu.set_device(_DEVICE)
-    x = torch.randn(batch, n_cols, device=_DEVICE, dtype=torch.float32)
-    y = torch.full((batch,), float("nan"), device=_DEVICE, dtype=torch.float32)
 
-    y_ref = x.float().sum(dim=-1)
+    fn = _load_kernel(name)
+
+    x = _make_input(name, batch, n_cols, _DEVICE)
+    y = torch.full(
+        _output_shape(name, batch, n_cols),
+        float("nan"),
+        device=_DEVICE,
+        dtype=torch.float32,
+    )
+    y_ref = _reference(name, x)
 
     stream_ptr = torch.npu.current_stream()._as_parameter_
-    lib.call_rowsum(
+    fn(
         ctypes.c_uint32(_BLOCK_DIM),
         stream_ptr,
         ctypes.c_void_p(x.data_ptr()),
@@ -92,43 +150,7 @@ def test_rowsum_precision(compiled_sum, batch, n_cols):
     )
     torch.npu.synchronize()
 
-    torch.testing.assert_close(y, y_ref, atol=1e-4, rtol=0)
-
-
-@pytest.mark.require_npu
-@pytest.mark.parametrize("batch, n_cols", _SHAPES, ids=_SHAPE_IDS)
-def test_colsum_precision(compiled_sum, batch, n_cols):
-    import torch_npu  # noqa: F401
-
-    lib = ctypes.CDLL(_COLSUM_LIB_PATH)
-    lib.call_colsum.argtypes = [
-        ctypes.c_uint32,
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_uint32,
-        ctypes.c_uint32,
-    ]
-    lib.call_colsum.restype = None
-
-    torch.npu.set_device(_DEVICE)
-    x = torch.randn(batch, n_cols, device=_DEVICE, dtype=torch.float32)
-    y = torch.full((n_cols,), float("nan"), device=_DEVICE, dtype=torch.float32)
-
-    y_ref = x.float().sum(dim=0)
-
-    stream_ptr = torch.npu.current_stream()._as_parameter_
-    lib.call_colsum(
-        ctypes.c_uint32(_BLOCK_DIM),
-        stream_ptr,
-        ctypes.c_void_p(x.data_ptr()),
-        ctypes.c_void_p(y.data_ptr()),
-        ctypes.c_uint32(batch),
-        ctypes.c_uint32(n_cols),
-    )
-    torch.npu.synchronize()
-
-    torch.testing.assert_close(y, y_ref, atol=1e-4, rtol=0)
+    torch.testing.assert_close(y, y_ref, **_tolerances(name))
 
 
 if __name__ == "__main__":

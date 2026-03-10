@@ -92,8 +92,32 @@ def row_sum(src, tmp, dst):
     _pto.TRowSumOp(src=src, tmp=tmp, dst=dst)
 
 
+def row_min(src, tmp, dst):
+    _pto.TRowMinOp(src=src, tmp=tmp, dst=dst)
+
+
+def row_max(src, tmp, dst):
+    _pto.TRowMaxOp(src=src, tmp=tmp, dst=dst)
+
+
+def row_prod(src, tmp, dst):
+    _pto.TRowProdOp(src=src, tmp=tmp, dst=dst)
+
+
 def col_sum(src, tmp, dst, is_binary=True):
     _pto.TColSumOp(src=src,  dst=dst, tmp=tmp, isBinary=BoolAttr.get(is_binary))
+
+
+def col_min(src, dst):
+    _pto.TColMinOp(src=src,  dst=dst)
+
+
+def col_max(src, dst):
+    _pto.TColMaxOp(src=src,  dst=dst)
+
+
+def col_prod(src, tmp, dst, is_binary=True):
+    _pto.TColProdOp(src=src,  dst=dst, tmp=tmp, isBinary=BoolAttr.get(is_binary))
 
 
 def subset(source, offsets, sizes):

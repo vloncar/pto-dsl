@@ -20,15 +20,26 @@ BISHENG_FLAGS=(
     -std=gnu++17
 )
 
-for MODE in row col; do
-    python "$SCRIPT_DIR/gen_ir.py" --mode "$MODE" > "$TMP/${MODE}sum.pto"
-    ptoas --enable-insert-sync "$TMP/${MODE}sum.pto" -o "$TMP/${MODE}sum.cpp"
+MODES=(
+    rowsum
+    rowmin
+    rowmax
+    # rowprod
+    colsum
+    # colmin
+    # colmax
+    # colprod
+)
 
-    python "$SCRIPT_DIR/caller.py" --mode "$MODE" > "$TMP/${MODE}sum_caller.cpp"
+for MODE in "${MODES[@]}"; do
+    python "$SCRIPT_DIR/gen_ir.py" --mode "$MODE" > "$TMP/${MODE}.pto"
+    ptoas --enable-insert-sync "$TMP/${MODE}.pto" -o "$TMP/${MODE}.cpp"
+
+    python "$SCRIPT_DIR/caller.py" --mode "$MODE" > "$TMP/${MODE}_caller.cpp"
 
     bisheng "${BISHENG_FLAGS[@]}" \
-        "$TMP/${MODE}sum_caller.cpp" \
-        -o "$SCRIPT_DIR/${MODE}sum_lib.so"
+        "$TMP/${MODE}_caller.cpp" \
+        -o "$SCRIPT_DIR/${MODE}_lib.so"
 
-    echo "Built ${MODE}sum_lib.so successfully."
+    echo "Built ${MODE}_lib.so successfully."
 done

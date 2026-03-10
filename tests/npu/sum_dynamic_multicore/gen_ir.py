@@ -1,6 +1,7 @@
-"""Print MLIR IR for the dynamic multicore rowsum or colsum kernel (fp32).
+"""Print MLIR IR for dynamic multicore row/col reduction kernels.
 
-Usage: python gen_ir.py --mode row|col
+Usage:
+  python gen_ir.py --mode rowsum|rowmin|rowmax|rowprod|colsum|colmin|colmax|colprod
 """
 
 import argparse
@@ -9,12 +10,36 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from sum_builder import build_colsum, build_rowsum
+from sum_builder import (
+    # build_colmax,
+    # build_colmin,
+    # build_colprod,
+    build_colsum,
+    build_rowmax,
+    build_rowmin,
+    # build_rowprod,
+    build_rowsum,
+)
+
+_BUILDERS = {
+    "rowsum": build_rowsum,
+    "rowmin": build_rowmin,
+    "rowmax": build_rowmax,
+    # "rowprod": build_rowprod,
+    "colsum": build_colsum,
+    # "colmin": build_colmin,
+    # "colmax": build_colmax,
+    # "colprod": build_colprod,
+}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["row", "col"], default="row")
+    parser.add_argument(
+        "--mode",
+        choices=list(_BUILDERS.keys()),
+        default="rowsum",
+    )
     parser.add_argument("--dtype", choices=["fp16", "fp32"], default="fp32")
     args = parser.parse_args()
-    builder = build_rowsum if args.mode == "row" else build_colsum
-    print(builder(dtype=args.dtype))
+
+    print(_BUILDERS[args.mode](dtype=args.dtype))
