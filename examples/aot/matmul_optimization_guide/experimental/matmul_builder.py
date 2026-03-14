@@ -313,7 +313,7 @@ def build():
                         tile_buf_b_l1_256,
                         tile_buf_b_l0_256,
                         tile_buf_c_256,
-                        *shared_args
+                        *shared_args,
                     )
                 with branch.else_context():
                     level1_loop_mn_dynamic_tilesize(
@@ -323,7 +323,7 @@ def build():
                         tile_buf_b_l1_128,
                         tile_buf_b_l0_128,
                         tile_buf_c_128,
-                        *shared_args
+                        *shared_args,
                     )
 
             for li in pto.range(bid, core_loop, num_blocks):
