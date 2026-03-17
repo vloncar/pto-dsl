@@ -145,11 +145,11 @@ If required C++ op has no convenient Python wrapper:
 
 ## Escalation Path (Only When Mapping Is Missing)
 
-Check in order:
-1. MLIR Python op bindings: `references/ptoas_source/pto.py`
-2. Dialect op definitions/contracts: `references/ptoas_source/PTOOps.td`
-3. C++ codegen lowering: `references/ptoas_source/PTOToEmitC.cpp`
-4. ISA semantics: `references/ptoisa_source/pto-inst.hpp`
+Check in order in the `references/external_repo`
+1. Clone the `PTOAS` and `pto-isa` repos
+2. Check Dialect op definitions: `PTOOps.td` in `PTOAS` repo
+3. C++ codegen lowering: `PTOToEmitC.cpp` in `PTOAS` repo
+4. ISA semantics: `pto-inst.hpp` in `pto-isa` repo
 
 If op exists in dialect but not lowered in `PTOToEmitC.cpp`, translation requires PTOAS compiler work (not only DSL wrapper work).
 In this case, suggest an issue report to PTOAS project (https://github.com/zhangstevenunity/PTOAS)
@@ -173,4 +173,4 @@ Use these first:
 - `examples/aot/elementwise/add_dynamic_multicore/*` (caller/test/build pattern)
 - `examples/aot/matmul_optimization_guide/matmul_optim_guide.md` (sync and runtime-control semantics)
 
-Consult `references/ptoas_source/**` and ISA headers only for patterns not covered by examples.
+Consult `references/external_repo/**` only for patterns not covered by examples.
