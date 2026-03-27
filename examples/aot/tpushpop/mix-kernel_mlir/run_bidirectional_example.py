@@ -76,6 +76,7 @@ def main() -> None:
         fifo_bytes=DEFAULT_FIFO_BYTES,
         device=device,
     )
+    torch.set_printoptions(precision=1, threshold=2000, linewidth=250, sci_mode=False)
     x, y = make_io_tensors(device=device)
 
     print(y)
@@ -84,6 +85,8 @@ def main() -> None:
 
     y_ref = x.cpu() @ x.cpu()
     y_cpu = y.cpu()
+
+    print(y_ref-y_cpu)
     max_abs = float(torch.max(torch.abs(y_cpu - y_ref)).item())
     ok = bool(torch.allclose(y_cpu, y_ref, atol=ATOL, rtol=RTOL))
 
