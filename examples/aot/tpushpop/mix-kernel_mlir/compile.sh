@@ -10,7 +10,13 @@ LIB_PATH="${SCRIPT_DIR}/tpushpop_mlir_lib.so"
 mkdir -p "${ARTIFACT_DIR}"
 rm -f "${GENERATED_CPP}" "${LIB_PATH}"
 
-ptoas --pto-arch=a3 --enable-insert-sync "${MLIR_PATH}" > "${GENERATED_CPP}"
+MLIR_GEN_PATH="${SCRIPT_DIR}/bidir_gen.mlir"
+python bidirectional_builder.py > bidir_gen.mlir
+ptoas --pto-arch=a3 --enable-insert-sync "${MLIR_GEN_PATH}" > "${GENERATED_CPP}"
+
+#ptoas --pto-arch=a3 --enable-insert-sync "${MLIR_PATH}" > "${GENERATED_CPP}"
+
+
 
 bisheng \
     -I/sources/pto-isa/include/ \
