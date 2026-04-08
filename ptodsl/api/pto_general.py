@@ -106,14 +106,17 @@ def alloc_tile(tile_type, *, addr=None, valid_row=None, valid_col=None):
 #     auto = true
 # } -> i32
 def reserve_buffer(*, name, size, location, auto_alloc=True, base=None):
+    """
+        - At most one `pto.reserve_buffer` is expected in one function
+        - `location` must be a supported local address space
+        - Op-level verification requires:
+        - `auto = false` must provide `base`
+        - `auto = true` must not provide `base`
+    """
     # All params are compile time attributes
     # wrap reserve_buffer(name, size, location, auto_alloc, *, base=None, loc=None, ip=None) -> mlir._mlir_libs._mlir.ir.Value
-    kwargs = {}
-    if base is not None:
-        kwargs["base"] = base
-    return _pto.ReserveBufferOp(
-        name, size, _resolve_address_space_attr(location), auto_alloc, **kwargs
-    ).result
+
+    return _pto.ReserveBufferOp(name, size, _resolve_address_space_attr(location), auto_alloc, base=base).result
 
 
 # %c2v_import = pto.import_reserved_buffer {
@@ -135,15 +138,12 @@ def aic_initialize_pipe(
 ):
     # wrap
     # aic_initialize_pipe(dir_mask, slot_size, c2v_consumer_buf, v2c_consumer_buf, *, gm_slot_buffer=None, loc=None, ip=None) -> mlir._mlir_libs._mlir.ir.Operation
-    kwargs = {}
-    if gm_slot_buffer is not None:
-        kwargs["gm_slot_buffer"] = _unwrap(gm_slot_buffer)
     return _pto.AicInitializePipeOp(
         dir_mask,
         slot_size,
         c2v_consumer_buf=_unwrap(c2v_consumer_buf),
         v2c_consumer_buf=_unwrap(v2c_consumer_buf),
-        **kwargs,
+        gm_slot_buffer=_unwrap(gm_slot_buffer),
     )
 
 
@@ -162,15 +162,12 @@ def aiv_initialize_pipe(
 ):
     # wrap
     # aiv_initialize_pipe(dir_mask, slot_size, c2v_consumer_buf, v2c_consumer_buf, *, gm_slot_buffer=None, loc=None, ip=None) -> mlir._mlir_libs._mlir.ir.Operation
-    kwargs = {}
-    if gm_slot_buffer is not None:
-        kwargs["gm_slot_buffer"] = _unwrap(gm_slot_buffer)
     return _pto.AivInitializePipeOp(
         dir_mask,
         slot_size,
         c2v_consumer_buf=_unwrap(c2v_consumer_buf),
         v2c_consumer_buf=_unwrap(v2c_consumer_buf),
-        **kwargs,
+        gm_slot_buffer=_unwrap(gm_slot_buffer),
     )
 
 
