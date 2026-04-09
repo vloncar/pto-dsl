@@ -22,7 +22,8 @@ rm -f "${GENERATED_CPP}" "${LIB_PATH}"
 
 python "${BUILDER_PATH}" > "${MLIR_GEN_PATH}"
 ptoas --pto-arch=a3 --enable-insert-sync "${MLIR_GEN_PATH}" > "${GENERATED_CPP}"
-
+# add extern "C" to function so kernel name is not mangled
+perl -0pi -e 's/\b__global__ AICORE void call_both\(/extern "C" __global__ AICORE void call_both(/' "${GENERATED_CPP}"
 
 bisheng \
     -I/sources/pto-isa/include/ \
