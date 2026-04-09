@@ -4,10 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ARTIFACT_DIR="${SCRIPT_DIR}/build_artifacts"
 MODE="${TPUSHPOP_MODE:-c2v}"
-BUILDER_PATH="${SCRIPT_DIR}/${MODE}_builder.py"
-MLIR_GEN_PATH="${SCRIPT_DIR}/${MODE}_gen.mlir"
+BUILDER_PATH="${SCRIPT_DIR}/kernels/${MODE}_builder.py"
+MLIR_GEN_PATH="${ARTIFACT_DIR}/${MODE}_gen.mlir"
 GENERATED_CPP="${ARTIFACT_DIR}/${MODE}.cpp"
-LIB_PATH="${SCRIPT_DIR}/tpushpop_mlir_lib.so"
+LIB_PATH="${ARTIFACT_DIR}/tpushpop_mlir_lib.so"
 
 case "${MODE}" in
   c2v|c2v_add|v2c|bidi) ;;

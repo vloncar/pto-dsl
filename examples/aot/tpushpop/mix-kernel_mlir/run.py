@@ -9,7 +9,7 @@ import torch_npu  # noqa: F401
 from ptodsl.test_util import get_test_device
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_LIB_PATH = os.path.join(THIS_DIR, "tpushpop_mlir_lib.so")
+DEFAULT_LIB_PATH = os.path.join(THIS_DIR, "build_artifacts", "tpushpop_mlir_lib.so")
 DEFAULT_COMPILE_SCRIPT = os.path.join(THIS_DIR, "compile.sh")
 DEFAULT_FIFO_BYTES = 4 * 1024
 DEFAULT_FIFO_BYTES_BOTH = 8 * 1024

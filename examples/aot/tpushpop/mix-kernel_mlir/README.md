@@ -1,38 +1,80 @@
-# Cross core communication with `pto.push_to_aiv` example
+# TPush / TPop mixed-kernel examples
 
-## Run
+Small examples of tile FIFO communication between Cube (`AIC`) and Vector (`AIV`).
 
 ```bash
 python run.py c2v
+python run.py v2c
 python run.py bidi
 ```
 
-`c2v` is the default, so `python run.py` is the same as `python run.py c2v`.
+`python run.py` defaults to `c2v`.
 
-## How C2V Communication Works
+Files:
 
-This example sends one `16x16 f32` tile from the Cube kernel to the Vector kernel.
+- `kernels/` has the Python builders.
+- `build_artifacts/` gets generated MLIR, generated C++, and the `.so`.
+- `gm_slot_buffer` is the GM backing store for the pipe.
+- `caller.cpp` sets the FFTS base before launching the generated kernel.
 
-- The host allocates one shared `gm_slot_buffer` and passes it to both kernels.
-- The Vector kernel owns the C2V consumer buffer with `pto.reserve_buffer(name = "c2v_fifo")`.
-- The Cube kernel refers to that same buffer with `pto.import_reserved_buffer(name = "c2v_fifo")`.
-- Both sides call `*_initialize_pipe` with `dir_mask = 1`, which means `C2V`.
-- Cube sends with `pto.tpush_to_aiv(...)`.
-- Vector receives with `pto.tpop_from_aic(...)` and releases the consumed slot with `pto.tfree_from_aic`.
+Core idea:
 
-In the generated C++, this becomes the same `TPipe<..., Direction::DIR_C2V, ...>` on both sides:
+- `aic_initialize_pipe` / `aiv_initialize_pipe` lower to matching `TPipe<...>` objects.
+- `gm_slot_buffer` is the shared GM slot memory used by that `TPipe`.
+- `tpush_to_aiv` / `tpush_to_aic` lower to `TPUSH(pipe, tile)`.
+- `tpop_from_aic` / `tpop_from_aiv` lower to `TPOP(pipe, tile)`.
+- `tfree_from_aic` / `tfree_from_aiv` lower to `TFREE(pipe)` and release the consumed slot.
 
-- Cube: `TPUSH(pipe, acc_tile)`
-- Vector: `TPOP(pipe, vec_tile)` then `TFREE(pipe)`
+## C2V
 
-The important mental model is: `TPUSH`/`TPOP` are the real cross-core handoff, while `gm_slot_buffer` is the shared backing storage that makes the FIFO work.
+Cube sends. Vector receives.
 
-## How Bidirectional Works
+This example computes `X @ X` on Cube, sends the accumulator tile to Vector, then Vector stores it to GM.
 
-`bidi` starts the same way as `c2v`, but adds a return path:
+```text
+Cube:   load X -> matmul -> tpush_to_aiv
+Vector: tpop_from_aic -> store Y -> tfree_from_aic
+```
 
-- Cube computes `x @ x` and sends it to vector over C2V.
-- Vector pops that tile, computes `tile + tile`, and pushes the doubled result back over V2C.
-- Cube pops the returned tile and writes it to GM.
+Pipe wiring:
 
-The important difference is that both sides initialize with `dir_mask = 3`, so the same mixed-kernel launch can use both directions of the pipe.
+- Vector owns the consumer buffer: `reserve_buffer("c2v_fifo", location="VEC")`
+- Cube imports it: `import_reserved_buffer("c2v_fifo", peer_func="@vector_kernel")`
+- Both sides initialize with `dir_mask = 1`
+
+## V2C
+
+Vector sends. Cube receives.
+
+This example loads `X` on Vector, sends that tile to Cube, then Cube stores it to GM.
+
+```text
+Vector: load X -> tpush_to_aic
+Cube:   tpop_from_aiv -> store Y -> tfree_from_aiv
+```
+
+Pipe wiring:
+
+- Cube owns the consumer buffer: `reserve_buffer("v2c_fifo", location="MAT")`
+- Vector imports it: `import_reserved_buffer("v2c_fifo", peer_func="@cube_kernel")`
+- Both sides initialize with `dir_mask = 2`
+
+## BIDI
+
+Both directions are enabled.
+
+This example sends `X @ X` from Cube to Vector. Vector doubles it and sends it back. Cube receives the returned tile and stores it to GM.
+
+```text
+Cube:   matmul -> tpush_to_aiv
+Vector: tpop_from_aic -> add -> tpush_to_aic -> tfree_from_aic
+Cube:   tpop_from_aiv -> store Y -> tfree_from_aiv
+```
+
+Pipe wiring:
+
+- Vector reserves `c2v_fifo`; Cube imports it
+- Cube reserves `v2c_fifo`; Vector imports it
+- Both sides initialize with `dir_mask = 3`
+
+For `dir_mask = 3`, allocate FIFO backing for both directions. `run.py` uses `8 KiB`.
