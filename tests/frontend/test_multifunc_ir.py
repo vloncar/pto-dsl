@@ -1,3 +1,5 @@
+import subprocess
+
 from mlir.dialects import func, pto as _pto
 from mlir.ir import (
     Attribute,
@@ -92,3 +94,20 @@ def test_old_single_function_builder_matches_raw_mlir():
 
 def test_new_multi_function_builder_matches_raw_mlir():
     assert str(multi_kernel_module) == str(build_multi_verbose())
+
+
+def test_multi_function_module_compiles_with_ptoas(tmp_path):
+    pto_path = tmp_path / "multi_kernel_module.pto"
+    cpp_path = tmp_path / "multi_kernel_module.cpp"
+    pto_path.write_text(str(multi_kernel_module), encoding="utf-8")
+
+    subprocess.run(
+        [
+            "ptoas",
+            "--enable-insert-sync",
+            str(pto_path),
+            "-o",
+            str(cpp_path),
+        ],
+        check=True,
+    )
