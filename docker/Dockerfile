@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir \
     ipython jupyterlab matplotlib pandas
 
 # certain operations need latest isa header, not CANN 8.5.0 default
-# header on 2026/03/24
+# header on 2026/04/08
 ARG PTOISA_COMMIT=a8c3fbf42a2f4a0f609f64e138dda62deefddb8e
 WORKDIR /sources
 RUN git clone https://gitcode.com/cann/pto-isa.git \

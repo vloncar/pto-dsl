@@ -1,9 +1,20 @@
-rm -f add_double.pto add_double.cpp add_double_lib.so
+#!/bin/bash
+set -e
 
-python ./add_double_builder.py > ./add_double.pto
-ptoas --enable-insert-sync ./add_double.pto -o ./add_double.cpp
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# CANN 8.5 headers don't have CompactMode, need latest pto-isa source
+DTYPE=${1:?Usage: compile.sh <dtype>}
+
+FN_NAME="tsort32_1d_dynamic_${DTYPE}"
+
+TMP=$(mktemp -d)
+trap "rm -rf $TMP" EXIT
+
+python "$SCRIPT_DIR/gen_ir.py" "$DTYPE" > "$TMP/${FN_NAME}.pto"
+ptoas --enable-insert-sync "$TMP/${FN_NAME}.pto" -o "$TMP/${FN_NAME}.cpp"
+
+python "$SCRIPT_DIR/caller.py" "$DTYPE" > "$TMP/caller.cpp"
+
 PTO_LIB_PATH=/sources/pto-isa
 bisheng \
     -I${PTO_LIB_PATH}/include \
@@ -17,6 +28,7 @@ bisheng \
     -mllvm -cce-aicore-dcci-insert-for-scalar=false \
     --npu-arch=dav-2201 -DMEMORY_BASE \
     -std=gnu++17 \
-    -DKERNEL_CPP="\"add_double.cpp\"" \
-    ./caller.cpp \
-    -o ./add_double_lib.so
+    "$TMP/caller.cpp" \
+    -o "$SCRIPT_DIR/${FN_NAME}_lib.so"
+
+echo "Built ${FN_NAME}_lib.so successfully."

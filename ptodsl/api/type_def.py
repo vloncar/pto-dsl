@@ -7,7 +7,17 @@ from . import scalar
 def __getattr__(name):
     # MLIR type factories require an active context, so keep dtype aliases lazy
     # and resolve them only when user code accesses them inside PTO/MLIR setup.
-    if name in {"bool", "float16", "float32", "int16", "int32"}:
+    if name in {
+        "bool",
+        "float16",
+        "float32",
+        "int8",
+        "uint8",
+        "int16",
+        "int32",
+        "uint32",
+        "int64",
+    }:
         return getattr(scalar, name)
     if name == "ffts_type":
         return MemRefType.get([256], IntegerType.get_signless(64))
@@ -112,4 +122,5 @@ __all__ = [
     "int16",
     "int32",
     "ffts_type",
+    "uint32",
 ]

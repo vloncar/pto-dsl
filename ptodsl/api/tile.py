@@ -1,5 +1,6 @@
+from mlir.dialects import arith as _arith
 from mlir.dialects import pto as _pto
-from mlir.ir import BoolAttr
+from mlir.ir import BoolAttr, IntegerType
 
 from .scalar import _unwrap
 
@@ -28,6 +29,14 @@ def or_(lhs, rhs, out):
     _pto.TOrOp(lhs, rhs, out)
 
 
+def and_(lhs, rhs, out):
+    _pto.TAndOp(lhs, rhs, out)
+
+
+def xor(lhs, rhs, tmp, out):
+    _pto.TXorOp(lhs, rhs, tmp, out)
+
+
 def min(lhs, rhs, out):
     _pto.TMinOp(lhs, rhs, out)
 
@@ -36,12 +45,12 @@ def max(lhs, rhs, out):
     _pto.TMaxOp(lhs, rhs, out)
 
 
-def gather(src, out, indices=None, *, mask_pattern=None):
+def gather(src, out, indices=None, tmp=None, *, mask_pattern=None):
     if mask_pattern is not None:
         mask = _pto.MaskPatternAttr.get(getattr(_pto.MaskPattern, mask_pattern))
         _pto.TGatherOp(src, out, maskPattern=mask)
     else:
-        _pto.TGatherOp(src, out, indices=indices)
+        _pto.TGatherOp(src, out, indices=indices, tmp=tmp)
 
 
 def exp(inp, out):
@@ -142,6 +151,47 @@ def col_expand(src, dst):
     _pto.TColExpandOp(src=src, dst=dst)
 
 
+def mrgsort(src, dst, block_len):
+    i32 = IntegerType.get_signless(32)
+    block_len_i32 = _arith.IndexCastOp(i32, _unwrap(block_len)).result
+    _pto.TMrgSortOp(srcs=[src], dsts=[dst], blockLen=block_len_i32)
+
+
+def sort32(src, dst, idx):
+    """TSORT32: sort src tile within 32-element blocks, writing interleaved
+    (score, index) pairs to dst. idx is an input tile of uint32 indices
+    attached to each src element. For float16 src, dst must have 4x the
+    columns of src (each element expands to 4 float16 words)."""
+    _pto.TSort32Op(src, idx, dst)
+
+
+_ROUND_MODE = {
+    "none": _pto.RoundMode.NONE,
+    "round": _pto.RoundMode.ROUND,
+    "trunc": _pto.RoundMode.TRUNC,
+    "ceil": _pto.RoundMode.CEIL,
+    "floor": _pto.RoundMode.FLOOR,
+    "rint": _pto.RoundMode.RINT,
+    "cast_rint": _pto.RoundMode.CAST_RINT,
+    "odd": _pto.RoundMode.ODD,
+}
+
+
+def cvt(src, dst, *, rmode=None):
+    """Convert tile element type (e.g. float32 → float16, float16 → float32).
+
+    src:   source tile.
+    dst:   destination tile with a different element type.
+    rmode: optional rounding mode string for lossy conversions: "none",
+           "round", "trunc", "ceil", "floor", "rint", "cast_rint", "odd".
+           Pass None (default) to omit the rounding-mode attribute.
+    """
+    rmode_attr = (
+        _pto.RoundModeAttr.get(_ROUND_MODE[rmode]) if rmode is not None else None
+    )
+    _pto.TCvtOp(src=src, dst=dst, rmode=rmode_attr)
+
+
 def subset(source, offsets, sizes):
     offset_vals = [_unwrap(v) for v in offsets]
     return _pto.subset(source, offset_vals, sizes)
@@ -158,6 +208,8 @@ __all__ = [
     "div",
     "mul",
     "or_",
+    "and_",
+    "xor",
     "gather",
     "exp",
     "log",
@@ -183,5 +235,8 @@ __all__ = [
     "col_max",
     "col_prod",
     "col_expand",
+    "mrgsort",
+    "sort32",
+    "cvt",
     "subset",
 ]
