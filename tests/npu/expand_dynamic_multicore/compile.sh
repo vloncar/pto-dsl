@@ -24,10 +24,21 @@ BISHENG_FLAGS=(
 
 MODES=(
     colexpand
+    colexpand_sub
+    colexpand_div
+    colexpand_mul
+    colexpand_min
+    colexpand_max
+    colexpand_add
+    colexpand_expdif
     rowexpand
+    rowexpand_add
     rowexpand_mul
     rowexpand_sub
     rowexpand_div
+    rowexpand_min
+    rowexpand_max
+    rowexpand_expdif
 )
 
 for MODE in "${MODES[@]}"; do

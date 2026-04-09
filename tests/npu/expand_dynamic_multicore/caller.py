@@ -4,7 +4,22 @@ Usage:
   python caller.py --mode colexpand|rowexpand|rowexpand_mul|rowexpand_sub|rowexpand_div
 """
 
-_FUSED_MODES = {"rowexpand_mul", "rowexpand_sub", "rowexpand_div"}
+_FUSED_MODES = {
+    "colexpand_add",
+    "colexpand_sub",
+    "colexpand_div",
+    "colexpand_mul",
+    "colexpand_min",
+    "colexpand_max",
+    "colexpand_expdif",
+    "rowexpand_add",
+    "rowexpand_mul",
+    "rowexpand_sub",
+    "rowexpand_div",
+    "rowexpand_min",
+    "rowexpand_max",
+    "rowexpand_expdif",
+}
 
 
 def generate_caller(mode, dtype):
@@ -55,10 +70,21 @@ if __name__ == "__main__":
 
     MODES = [
         "colexpand",
+        "colexpand_sub",
+        "colexpand_div",
+        "colexpand_mul",
+        "colexpand_min",
+        "colexpand_max",
+        "colexpand_add",
+        "colexpand_expdif",
         "rowexpand",
+        "rowexpand_add",
         "rowexpand_mul",
         "rowexpand_sub",
         "rowexpand_div",
+        "rowexpand_min",
+        "rowexpand_max",
+        "rowexpand_expdif",
     ]
 
     parser = argparse.ArgumentParser()

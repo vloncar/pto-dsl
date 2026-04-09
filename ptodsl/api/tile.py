@@ -127,6 +127,10 @@ def row_expand_div(src0, src1, dst):
     _pto.TRowExpandDivOp(src0=src0, src1=src1, dst=dst)
 
 
+def row_expand_add(src0, src1, dst):
+    _pto.TRowExpandAddOp(src0=src0, src1=src1, dst=dst)
+
+
 def row_expand_mul(src0, src1, dst):
     _pto.TRowExpandMulOp(src0=src0, src1=src1, dst=dst)
 
@@ -143,12 +147,52 @@ def col_max(src, dst):
     _pto.TColMaxOp(src=src, dst=dst)
 
 
-def col_prod(src, tmp, dst, is_binary=True):
-    _pto.TColProdOp(src=src, dst=dst, tmp=tmp, isBinary=BoolAttr.get(is_binary))
+def col_prod(src, tmp, dst):
+    _pto.TColProdOp(src=src, dst=dst)
 
 
 def col_expand(src, dst):
     _pto.TColExpandOp(src=src, dst=dst)
+
+
+def col_expand_sub(src0, src1, dst):
+    _pto.TColExpandSubOp(src0=src0, src1=src1, dst=dst)
+
+
+def col_expand_div(src0, src1, dst):
+    _pto.TColExpandDivOp(src0=src0, src1=src1, dst=dst)
+
+
+def col_expand_mul(src0, src1, dst):
+    _pto.TColExpandMulOp(src0=src0, src1=src1, dst=dst)
+
+
+def col_expand_min(src0, src1, dst):
+    _pto.TColExpandMinOp(src0=src0, src1=src1, dst=dst)
+
+
+def col_expand_max(src0, src1, dst):
+    _pto.TColExpandMaxOp(src0=src0, src1=src1, dst=dst)
+
+
+def col_expand_add(src0, src1, dst):
+    _pto.TColExpandAddOp(src0=src0, src1=src1, dst=dst)
+
+
+def col_expand_expdif(src0, src1, dst):
+    _pto.TColExpandExpdifOp(src0=src0, src1=src1, dst=dst)
+
+
+def row_expand_min(src0, src1, dst):
+    _pto.TRowExpandMinOp(src0=src0, src1=src1, dst=dst)
+
+
+def row_expand_max(src0, src1, dst):
+    _pto.TRowExpandMaxOp(src0=src0, src1=src1, dst=dst)
+
+
+def row_expand_expdif(src0, src1, dst):
+    _pto.TRowExpandExpdifOp(src0=src0, src1=src1, dst=dst)
 
 
 def mrgsort(src, dst, block_len):
@@ -227,6 +271,7 @@ __all__ = [
     "row_max",
     "row_prod",
     "row_expand",
+    "row_expand_add",
     "row_expand_sub",
     "row_expand_div",
     "row_expand_mul",
@@ -235,6 +280,16 @@ __all__ = [
     "col_max",
     "col_prod",
     "col_expand",
+    "col_expand_sub",
+    "col_expand_div",
+    "col_expand_mul",
+    "col_expand_min",
+    "col_expand_max",
+    "col_expand_add",
+    "col_expand_expdif",
+    "row_expand_min",
+    "row_expand_max",
+    "row_expand_expdif",
     "mrgsort",
     "sort32",
     "cvt",
