@@ -1,4 +1,5 @@
 from mlir.dialects import pto as _pto
+from mlir.ir import IntegerType, MemRefType
 
 from . import scalar
 
@@ -18,6 +19,8 @@ def __getattr__(name):
         "int64",
     }:
         return getattr(scalar, name)
+    if name == "ffts_type":
+        return MemRefType.get([256], IntegerType.get_signless(64))
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
@@ -118,5 +121,6 @@ __all__ = [
     "float32",
     "int16",
     "int32",
+    "ffts_type",
     "uint32",
 ]

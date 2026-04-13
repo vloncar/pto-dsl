@@ -1,9 +1,19 @@
 import inspect
 
 from mlir.dialects import func, pto as _pto
-from mlir.ir import Context, InsertionPoint, Location, Module
+from mlir.ir import Attribute, Context, InsertionPoint, Location, Module, UnitAttr
 
 from ..api.scalar import wrap_value
+
+
+# For the inner decorators to be clean for the user visible API `pto.func(kernel='cube')`
+# with no reference to module, we need this:
+_CURRENT = None
+
+
+class FuncRef:
+    def __init__(self, sym_name):
+        self.sym_name = sym_name
 
 
 def _resolve_meta(meta_fn):
@@ -41,10 +51,7 @@ def _resolve_ret_types(signature, meta_map):
     if isinstance(ret_annot, (list, tuple)):
         out = []
         for elem in ret_annot:
-            if isinstance(elem, str):
-                out.append(meta_map[elem])
-            else:
-                out.append(elem)
+            out.append(meta_map[elem] if isinstance(elem, str) else elem)
         return out
     return [ret_annot]
 
@@ -64,46 +71,94 @@ def _inject_globals(fn, values):
     return old
 
 
-def _restore_globals(fn, old, injected_names):
-    for name in injected_names:
+def _restore_globals(fn, old, names):
+    for name in names:
         if old[name] is None and name in fn.__globals__:
             del fn.__globals__[name]
         else:
             fn.__globals__[name] = old[name]
 
 
-def to_ir_module(*, meta_data):
+def _define(module, ctx, meta_map, fn, *, name=None, entry=False, kernel=None):
+    sig = inspect.signature(fn)
+    arg_types = _resolve_arg_types(sig, meta_map)
+    ret_types = _resolve_ret_types(sig, meta_map)
+    fn_name = name or fn.__name__
+    fn_ty = func.FunctionType.get(arg_types, ret_types)
+
+    with InsertionPoint(module.body):
+        ir_func = func.FuncOp(fn_name, fn_ty)
+
+    if entry:
+        ir_func.operation.attributes["pto.entry"] = UnitAttr.get(ctx)
+    if kernel is not None:
+        ir_func.operation.attributes["pto.kernel_kind"] = Attribute.parse(
+            f"#pto.kernel_kind<{kernel}>"
+        )
+
+    block = ir_func.add_entry_block()
+    with InsertionPoint(block):
+        wrapped_args = [wrap_value(arg) for arg in block.arguments]
+        old = _inject_globals(fn, meta_map)
+        try:
+            fn(*wrapped_args)
+        finally:
+            _restore_globals(fn, old, meta_map.keys())
+
+        if not ret_types and not _has_func_return(block):
+            func.ReturnOp([])
+
+    return FuncRef(fn_name)
+
+
+def ir_func(*, name=None, entry=False, kernel=None):
     def decorator(fn):
-        sig = inspect.signature(fn)
-
-        with Context() as ctx, Location.unknown():
-            _pto.register_dialect(ctx, load=True)
-            meta_map = _resolve_meta(meta_data)
-            arg_types = _resolve_arg_types(sig, meta_map)
-            ret_types = _resolve_ret_types(sig, meta_map)
-            module = Module.create()
-            fn_ty = func.FunctionType.get(arg_types, ret_types)
-
-            with InsertionPoint(module.body):
-                ir_func = func.FuncOp(fn.__name__, fn_ty)
-                entry = ir_func.add_entry_block()
-
-            with InsertionPoint(entry):
-                wrapped_args = [wrap_value(arg) for arg in entry.arguments]
-                injected = set(meta_map.keys())
-                old_globals = _inject_globals(fn, meta_map)
-                try:
-                    fn(*wrapped_args)
-                finally:
-                    _restore_globals(fn, old_globals, injected)
-
-                if not ret_types and not _has_func_return(entry):
-                    func.ReturnOp([])
-
-            module.operation.verify()
-            return module
+        if _CURRENT is None:
+            raise RuntimeError(
+                "`pto.func(...)` can only be used inside `@to_ir_module(..., module=True)`."
+            )
+        return _define(
+            _CURRENT["module"],
+            _CURRENT["ctx"],
+            _CURRENT["meta_map"],
+            fn,
+            name=name,
+            entry=entry,
+            kernel=kernel,
+        )
 
     return decorator
 
 
-__all__ = ["to_ir_module"]
+def to_ir_module(*, meta_data, module=False):
+    def decorator(fn):
+        global _CURRENT
+
+        with Context() as ctx, Location.unknown():
+            _pto.register_dialect(ctx, load=True)
+            meta_map = _resolve_meta(meta_data)
+            ir_module = Module.create()
+
+            if module:
+                if inspect.signature(fn).parameters:
+                    raise ValueError(
+                        "`module=True` expects a zero-argument builder function."
+                    )
+                old = _inject_globals(fn, meta_map)
+                prev = _CURRENT
+                _CURRENT = {"ctx": ctx, "module": ir_module, "meta_map": meta_map}
+                try:
+                    fn()
+                finally:
+                    _CURRENT = prev
+                    _restore_globals(fn, old, meta_map.keys())
+            else:
+                _define(ir_module, ctx, meta_map, fn)
+
+            ir_module.operation.verify()
+            return ir_module
+
+    return decorator
+
+
+__all__ = ["FuncRef", "ir_func", "to_ir_module"]
