@@ -56,6 +56,14 @@ def set_ffts(ffts):
     return _pto.SetFFTsOp(_unwrap(ffts))
 
 
+def sync_set(pipe, event_id, ffts_mode=2):
+    return _pto.sync_set(pipe, event_id, ffts_mode)
+
+
+def sync_wait(pipe, event_id):
+    return _pto.sync_wait(pipe, event_id)
+
+
 def as_tensor(tensor_type, *, ptr, shape, strides, layout=None):
     shape_vals = [_unwrap(v) for v in shape]
     stride_vals = [_unwrap(v) for v in strides]
@@ -244,6 +252,8 @@ __all__ = [
     "get_block_num",
     "call",
     "set_ffts",
+    "sync_set",
+    "sync_wait",
     "as_tensor",
     "slice_view",
     "vector_section",
