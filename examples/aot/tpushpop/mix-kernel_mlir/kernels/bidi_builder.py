@@ -20,7 +20,7 @@ def meta_data():
     )
     x_right_ty = pto.TileBufType(shape=[16, 16], dtype=dtype, memory_space="RIGHT")
     acc_ty = pto.TileBufType(shape=[16, 16], dtype=dtype, memory_space="ACC")
-    vec_ty = pto.TileBufType(shape=[16, 16], dtype=dtype, memory_space="VEC")
+    vec_ty = pto.TileBufType(shape=[8, 16], dtype=dtype, memory_space="VEC")
     # Direct GM writeback from cube needs a row-major NoneBox tile.
     cube_recv_ty = pto.TileBufType(
         shape=[16, 16],
@@ -89,10 +89,14 @@ def module():
         tile.mov(x_mat_tile, x_left_tile)
         tile.mov(x_mat_tile, x_right_tile)
         tile.matmul(x_left_tile, x_right_tile, acc_tile)
-        pto.tpush_to_aiv(acc_tile, 0)
-        returned_tile = pto.tpop_from_aiv(cube_recv_ty, 0)
+        # C2V push sends a 16x16 float32 ACC tile; split=1 delivers one
+        # distinct 8x16 float32 half to each vector subblock.
+        pto.tpush_to_aiv(acc_tile, 1)
+        # V2C pop receives the reassembled 16x16 float32 MAT tile from the
+        # two vector subblocks' 8x16 float32 halves.
+        returned_tile = pto.tpop_from_aiv(cube_recv_ty, 1)
         pto.store(returned_tile, gm_y_tile_view)
-        pto.tfree_from_aiv(0)
+        pto.tfree_from_aiv(1)
 
     @pto.func(kernel="vector")
     def vector_kernel(gm_slot_buffer: "ptr_ty") -> None:
@@ -112,10 +116,13 @@ def module():
         )
 
         doubled_tile = pto.alloc_tile(vec_ty)
-        recv_tile = pto.tpop_from_aic(vec_ty, 0)
+        # C2V pop receives one 8x16 float32 VEC tile on each vector subblock.
+        recv_tile = pto.tpop_from_aic(vec_ty, 1)
         tile.add(recv_tile, recv_tile, doubled_tile)
-        pto.tpush_to_aic(doubled_tile, 0)
-        pto.tfree_from_aic(0)
+        # V2C push sends one 8x16 float32 VEC tile from each vector subblock;
+        # split=1 reassembles them into one 16x16 float32 MAT tile on cube.
+        pto.tpush_to_aic(doubled_tile, 1)
+        pto.tfree_from_aic(1)
 
     @pto.func
     def call_both(
