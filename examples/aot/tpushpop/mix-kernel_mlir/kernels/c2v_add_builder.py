@@ -77,7 +77,8 @@ def module():
         tile.mov(x_mat_tile, x_left_tile)
         tile.mov(x_mat_tile, x_right_tile)
         tile.matmul(x_left_tile, x_right_tile, acc_tile)
-        # Split the cube result across the two vector subblocks by row.
+        # C2V push sends a 16x16 float32 ACC tile; split=1 delivers one
+        # distinct 8x16 float32 half to each vector subblock.
         pto.tpush_to_aiv(acc_tile, 1)
 
     @pto.func(kernel="vector")
@@ -121,8 +122,7 @@ def module():
         )
 
         doubled_tile = pto.alloc_tile(vec_ty)
-        # split=1 means each vector subblock receives one 8x16 row half of the
-        # cube's 16x16 accumulator tile, then stores to its own row slice.
+        # C2V pop receives one 8x16 float32 VEC tile on each vector subblock.
         recv_tile = pto.tpop_from_aic(vec_ty, 1)
         tile.add(recv_tile, recv_tile, doubled_tile)
         pto.store(doubled_tile, gm_y_tile_view)
