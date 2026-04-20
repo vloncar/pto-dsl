@@ -56,6 +56,14 @@ def set_ffts(ffts):
     return _pto.SetFFTsOp(_unwrap(ffts))
 
 
+def addptr(ptr, offset):
+    """Return ptr advanced by offset elements, preserving the !pto.ptr type.
+
+    The offset is in elements of the pointer's element type, not bytes.
+    """
+    return _pto.AddPtrOp(_unwrap(ptr), _unwrap(offset)).result
+
+
 def as_tensor(tensor_type, *, ptr, shape, strides, layout=None):
     shape_vals = [_unwrap(v) for v in shape]
     stride_vals = [_unwrap(v) for v in strides]
@@ -239,6 +247,7 @@ __all__ = [
     "get_block_num",
     "call",
     "set_ffts",
+    "addptr",
     "as_tensor",
     "slice_view",
     "vector_section",
