@@ -64,6 +64,14 @@ def sync_wait(pipe, event_id):
     return _pto.sync_wait(pipe, event_id)
 
 
+def addptr(ptr, offset):
+    """Return ptr advanced by offset elements, preserving the !pto.ptr type.
+
+    The offset is in elements of the pointer's element type, not bytes.
+    """
+    return _pto.AddPtrOp(_unwrap(ptr), _unwrap(offset)).result
+
+
 def as_tensor(tensor_type, *, ptr, shape, strides, layout=None):
     shape_vals = [_unwrap(v) for v in shape]
     stride_vals = [_unwrap(v) for v in strides]
@@ -254,6 +262,7 @@ __all__ = [
     "set_ffts",
     "sync_set",
     "sync_wait",
+    "addptr",
     "as_tensor",
     "slice_view",
     "vector_section",

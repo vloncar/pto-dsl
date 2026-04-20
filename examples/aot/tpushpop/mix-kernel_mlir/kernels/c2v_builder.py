@@ -9,8 +9,9 @@ def meta_data():
     dtype = pto.float32
     ptr_ty = pto.PtrType(dtype)
     i32 = pto.int32
-    tensor_ty = pto.TensorType(rank=2, dtype=dtype)
+    tensor_ty = pto.TensorType(rank=3, dtype=dtype)
     tile_view_ty = pto.SubTensorType(shape=[16, 16], dtype=dtype)
+    y_half_view_ty = pto.SubTensorType(shape=[8, 16], dtype=dtype)
     x_mat_ty = pto.TileBufType(shape=[16, 16], dtype=dtype, memory_space="MAT")
     x_left_ty = pto.TileBufType(
         shape=[16, 16],
@@ -20,7 +21,7 @@ def meta_data():
     )
     x_right_ty = pto.TileBufType(shape=[16, 16], dtype=dtype, memory_space="RIGHT")
     acc_ty = pto.TileBufType(shape=[16, 16], dtype=dtype, memory_space="ACC")
-    recv_ty = pto.TileBufType(shape=[16, 16], dtype=dtype, memory_space="VEC")
+    recv_ty = pto.TileBufType(shape=[8, 16], dtype=dtype, memory_space="VEC")
     return locals()
 
 
@@ -31,7 +32,17 @@ def module():
         c0 = const(0)
         c1 = const(1)
         c16 = const(16)
+        c256 = const(256)
+        c2048 = const(2048)
         c0_i32 = const(0, type=i32)
+
+        # TPipe does not shard gm_slot_buffer by block id. Give every launched
+        # AIC/AIV block pair its own 8-slot C2V FIFO region in GM.
+        # slot_size=1024 bytes, slot_num=8 => 8192 bytes per block.
+        # addptr offsets are in f32 elements, so 8192 / sizeof(f32) = 2048.
+        block_idx = s.index_cast(pto.get_block_idx())
+        block_num = s.index_cast(pto.get_block_num())
+        block_gm_slot_buffer = pto.addptr(gm_slot_buffer, block_idx * c2048)
         c2v_import = pto.import_reserved_buffer(
             name="c2v_fifo",
             peer_func="@vector_kernel",
@@ -40,7 +51,7 @@ def module():
         pto.aic_initialize_pipe(
             dir_mask=1,
             slot_size=1024,
-            gm_slot_buffer=gm_slot_buffer,
+            gm_slot_buffer=block_gm_slot_buffer,
             c2v_consumer_buf=c2v_import,
             v2c_consumer_buf=c0_i32,
         )
@@ -55,49 +66,64 @@ def module():
             source=pto.as_tensor(
                 tensor_ty,
                 ptr=gm_x,
-                shape=[c16, c16],
-                strides=[c16, c1],
+                shape=[block_num, c16, c16],
+                strides=[c256, c16, c1],
             ),
-            offsets=[c0, c0],
-            sizes=[c16, c16],
+            offsets=[block_idx, c0, c0],
+            sizes=[c1, c16, c16],
         )
 
         pto.load(gm_x_tile_view, x_mat_tile)
         tile.mov(x_mat_tile, x_left_tile)
         tile.mov(x_mat_tile, x_right_tile)
         tile.matmul(x_left_tile, x_right_tile, acc_tile)
-        pto.tpush_to_aiv(acc_tile, 0)
+        # C2V push sends a 16x16 float32 ACC tile; split=1 delivers one
+        # distinct 8x16 float32 half to each vector subblock.
+        pto.tpush_to_aiv(acc_tile, 1)
 
     @pto.func(kernel="vector")
     def vector_kernel(gm_slot_buffer: "ptr_ty", gm_y: "ptr_ty") -> None:
         c0 = const(0)
         c1 = const(1)
+        c8 = const(8)
         c16 = const(16)
+        c256 = const(256)
+        c2048 = const(2048)
         c0_i32 = const(0, type=i32)
-        c2v_local = pto.reserve_buffer(name="c2v_fifo", size=4096, location="VEC")
+
+        # Must match cube_kernel's per-block FIFO pointer exactly; otherwise
+        # launched block pairs would contend for the same GM FIFO slots.
+        block_idx = s.index_cast(pto.get_block_idx())
+        block_num = s.index_cast(pto.get_block_num())
+        block_gm_slot_buffer = pto.addptr(gm_slot_buffer, block_idx * c2048)
+        c2v_local = pto.reserve_buffer(name="c2v_fifo", size=8192, location="VEC")
 
         pto.aiv_initialize_pipe(
             dir_mask=1,
             slot_size=1024,
-            gm_slot_buffer=gm_slot_buffer,
+            gm_slot_buffer=block_gm_slot_buffer,
             c2v_consumer_buf=c2v_local,
             v2c_consumer_buf=c0_i32,
         )
 
+        subblock_idx = s.index_cast(pto.get_subblock_idx())
+        row_offset = subblock_idx * c8
+
         gm_y_tile_view = pto.slice_view(
-            tile_view_ty,
+            y_half_view_ty,
             source=pto.as_tensor(
                 tensor_ty,
                 ptr=gm_y,
-                shape=[c16, c16],
-                strides=[c16, c1],
+                shape=[block_num, c16, c16],
+                strides=[c256, c16, c1],
             ),
-            offsets=[c0, c0],
-            sizes=[c16, c16],
+            offsets=[block_idx, row_offset, c0],
+            sizes=[c1, c8, c16],
         )
 
-        pto.store(pto.tpop_from_aic(recv_ty, 0), gm_y_tile_view)
-        pto.tfree_from_aic(0)
+        # C2V pop receives one 8x16 float32 VEC tile on each vector subblock.
+        pto.store(pto.tpop_from_aic(recv_ty, 1), gm_y_tile_view)
+        pto.tfree_from_aic(1)
 
     @pto.func
     def call_both(

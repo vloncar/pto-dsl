@@ -1,4 +1,5 @@
 import os
+import sys
 
 
 DEVICE_ENV_VAR = "PTODSL_TEST_DEVICE_ID"
@@ -24,7 +25,8 @@ def get_num_cube_cores() -> int:
         return int(getattr(torch.npu.get_device_properties(0), "cube_core_num"))
     except Exception as e:
         print(
-            f"Warning: could not query cube_core_num ({e}); defaulting to {DEFAULT_NUM_CUBE_CORES}."
+            f"Warning: could not query cube_core_num ({e}); defaulting to {DEFAULT_NUM_CUBE_CORES}.",
+            file=sys.stderr,
         )
         return DEFAULT_NUM_CUBE_CORES
 
@@ -47,7 +49,8 @@ def get_num_vec_cores() -> int:
         return int(getattr(torch.npu.get_device_properties(0), "vector_core_num"))
     except Exception as e:
         print(
-            f"Warning: could not query vector_core_num ({e}); defaulting to {DEFAULT_NUM_VEC_CORES}."
+            f"Warning: could not query vector_core_num ({e}); defaulting to {DEFAULT_NUM_VEC_CORES}.",
+            file=sys.stderr,
         )
         return DEFAULT_NUM_VEC_CORES
 
@@ -56,7 +59,8 @@ def get_test_device() -> str:
     device_id = os.getenv(DEVICE_ENV_VAR)
     if not device_id:
         print(
-            f"Warning: {DEVICE_ENV_VAR} is not set; defaulting to {DEFAULT_DEVICE_ID}."
+            f"Warning: {DEVICE_ENV_VAR} is not set; defaulting to {DEFAULT_DEVICE_ID}.",
+            file=sys.stderr,
         )
         device_id = DEFAULT_DEVICE_ID
 
