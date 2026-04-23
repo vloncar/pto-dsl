@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pto-dsl"
-version = "0.1.0"
+version = "0.1.2"
 description = "Pythonic DSL for PTO-ISA"
 requires-python = ">=3.9"
 authors = [
