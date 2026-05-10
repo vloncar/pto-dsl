@@ -10,7 +10,7 @@ from ptodsl.utils.npu_info import get_num_cube_cores, get_test_device
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIB = os.path.join(HERE, "build_artifacts", "tpushpop_mlir_lib.so")
-MODES = ("c2v", "c2v_add", "v2c", "bidi")
+MODES = ("c2v", "c2v_add", "v2c", "bidi", "multi")
 TILE = 16
 FIFO_BYTES = 8 * 1024
 
@@ -27,12 +27,12 @@ def load_lib() -> ctypes.CDLL:
 
 def expected(mode: str, x: torch.Tensor) -> torch.Tensor:
     y = x.cpu() if mode == "v2c" else x.cpu() @ x.cpu()
-    return 2 * y if mode in ("c2v_add", "bidi") else y
+    return 2 * y if mode in ("c2v_add", "bidi", "multi") else y
 
 
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else "c2v"
-    assert mode in MODES
+    assert mode in MODES, f"Available modes: {MODES}"
 
     env = dict(os.environ, TPUSHPOP_MODE=mode)
     subprocess.run(["bash", "compile.sh"], check=True, cwd=HERE, env=env)
@@ -42,7 +42,8 @@ def main() -> None:
 
     blocks = get_num_cube_cores()
     shape = (blocks, TILE, TILE)
-    slots = torch.zeros((blocks * FIFO_BYTES,), dtype=torch.uint8, device=device)
+    fifo_bytes = 2 * FIFO_BYTES if mode == "multi" else FIFO_BYTES
+    slots = torch.zeros((blocks * fifo_bytes,), dtype=torch.uint8, device=device)
     x = torch.rand(shape, dtype=torch.float32, device=device) - 0.5
     y = torch.zeros_like(x)
 

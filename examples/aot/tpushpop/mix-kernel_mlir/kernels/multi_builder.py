@@ -3,6 +3,14 @@ from ptodsl import scalar as s
 
 const = s.const
 
+PIPE0_ID = 0
+PIPE1_ID = 1
+SPLIT_UP_DOWN = 1
+SLOT_SIZE = 1024
+GM_ELEMS_PER_PIPE = 2048  # 8 slots * 1024 bytes / sizeof(f32)
+GM_ELEMS_PER_BLOCK = 2 * GM_ELEMS_PER_PIPE
+FIFO_BYTES_PER_PIPE = 8 * 1024
+
 
 def meta_data():
     ffts_ty = pto.ffts_type
@@ -33,26 +41,41 @@ def module():
         c1 = const(1)
         c16 = const(16)
         c256 = const(256)
-        c2048 = const(2048)
+        c_pipe_stride = const(GM_ELEMS_PER_PIPE)
+        c_block_stride = const(GM_ELEMS_PER_BLOCK)
         c0_i32 = const(0, type=i32)
 
-        # TPipe does not shard gm_slot_buffer by block id. Give every launched
-        # AIC/AIV block pair its own 8-slot C2V FIFO region in GM.
-        # slot_size=1024 bytes, slot_num=8 => 8192 bytes per block.
-        # add_ptr offsets are in f32 elements, so 8192 / sizeof(f32) = 2048.
+        # Two independent C2V pipes share one per-block GM backing range.
+        # Each pipe owns 8192 bytes, so every AIC/AIV block pair uses 16384
+        # bytes. add_ptr offsets are in f32 elements.
         block_idx = s.index_cast(pto.get_block_idx())
         block_num = s.index_cast(pto.get_block_num())
-        block_gm_slot_buffer = pto.add_ptr(gm_slot_buffer, block_idx * c2048)
-        c2v_import = pto.import_reserved_buffer(
-            name="c2v_fifo",
+        block_gm_slot_buffer = pto.add_ptr(gm_slot_buffer, block_idx * c_block_stride)
+        pipe0_gm_slot_buffer = block_gm_slot_buffer
+        pipe1_gm_slot_buffer = pto.add_ptr(block_gm_slot_buffer, c_pipe_stride)
+        c2v0_import = pto.import_reserved_buffer(
+            name="multi_c2v_fifo_0",
+            peer_func="@vector_kernel",
+        )
+        c2v1_import = pto.import_reserved_buffer(
+            name="multi_c2v_fifo_1",
             peer_func="@vector_kernel",
         )
 
         pto.aic_initialize_pipe(
+            id=PIPE0_ID,
             dir_mask=1,
-            slot_size=1024,
-            gm_slot_buffer=block_gm_slot_buffer,
-            c2v_consumer_buf=c2v_import,
+            slot_size=SLOT_SIZE,
+            gm_slot_buffer=pipe0_gm_slot_buffer,
+            c2v_consumer_buf=c2v0_import,
+            v2c_consumer_buf=c0_i32,
+        )
+        pto.aic_initialize_pipe(
+            id=PIPE1_ID,
+            dir_mask=1,
+            slot_size=SLOT_SIZE,
+            gm_slot_buffer=pipe1_gm_slot_buffer,
+            c2v_consumer_buf=c2v1_import,
             v2c_consumer_buf=c0_i32,
         )
 
@@ -77,9 +100,11 @@ def module():
         tile.mov(x_mat_tile, x_left_tile)
         tile.mov(x_mat_tile, x_right_tile)
         tile.matmul(x_left_tile, x_right_tile, acc_tile)
-        # C2V push sends a 16x16 float32 ACC tile; split=1 delivers one
-        # distinct 8x16 float32 half to each vector subblock.
-        pto.tpush_to_aiv(acc_tile, 1)
+
+        # Send the same tile through two logical pipes. The vector side proves
+        # the ids select distinct pipe handles by popping and summing both.
+        pto.tpush_to_aiv(acc_tile, SPLIT_UP_DOWN, id=PIPE0_ID)
+        pto.tpush_to_aiv(acc_tile, SPLIT_UP_DOWN, id=PIPE1_ID)
 
     @pto.func(kernel="vector")
     def vector_kernel(gm_slot_buffer: "ptr_ty", gm_y: "ptr_ty") -> None:
@@ -88,21 +113,36 @@ def module():
         c8 = const(8)
         c16 = const(16)
         c256 = const(256)
-        c2048 = const(2048)
+        c_pipe_stride = const(GM_ELEMS_PER_PIPE)
+        c_block_stride = const(GM_ELEMS_PER_BLOCK)
         c0_i32 = const(0, type=i32)
 
-        # Must match cube_kernel's per-block FIFO pointer exactly; otherwise
-        # multiple launched blocks would contend for the same GM FIFO slots.
         block_idx = s.index_cast(pto.get_block_idx())
         block_num = s.index_cast(pto.get_block_num())
-        block_gm_slot_buffer = pto.add_ptr(gm_slot_buffer, block_idx * c2048)
-        c2v_local = pto.reserve_buffer(name="c2v_fifo", size=8192, location="VEC")
+        block_gm_slot_buffer = pto.add_ptr(gm_slot_buffer, block_idx * c_block_stride)
+        pipe0_gm_slot_buffer = block_gm_slot_buffer
+        pipe1_gm_slot_buffer = pto.add_ptr(block_gm_slot_buffer, c_pipe_stride)
+        c2v0_local = pto.reserve_buffer(
+            name="multi_c2v_fifo_0", size=FIFO_BYTES_PER_PIPE, location="VEC"
+        )
+        c2v1_local = pto.reserve_buffer(
+            name="multi_c2v_fifo_1", size=FIFO_BYTES_PER_PIPE, location="VEC"
+        )
 
         pto.aiv_initialize_pipe(
+            id=PIPE0_ID,
             dir_mask=1,
-            slot_size=1024,
-            gm_slot_buffer=block_gm_slot_buffer,
-            c2v_consumer_buf=c2v_local,
+            slot_size=SLOT_SIZE,
+            gm_slot_buffer=pipe0_gm_slot_buffer,
+            c2v_consumer_buf=c2v0_local,
+            v2c_consumer_buf=c0_i32,
+        )
+        pto.aiv_initialize_pipe(
+            id=PIPE1_ID,
+            dir_mask=1,
+            slot_size=SLOT_SIZE,
+            gm_slot_buffer=pipe1_gm_slot_buffer,
+            c2v_consumer_buf=c2v1_local,
             v2c_consumer_buf=c0_i32,
         )
 
@@ -121,12 +161,13 @@ def module():
             sizes=[c1, c8, c16],
         )
 
-        doubled_tile = pto.alloc_tile(vec_ty)
-        # C2V pop receives one 8x16 float32 VEC tile on each vector subblock.
-        recv_tile = pto.tpop_from_aic(vec_ty, 1)
-        tile.add(recv_tile, recv_tile, doubled_tile)
-        pto.store(doubled_tile, gm_y_tile_view)
-        pto.tfree_from_aic(1)
+        recv0_tile = pto.tpop_from_aic(vec_ty, SPLIT_UP_DOWN, id=PIPE0_ID)
+        recv1_tile = pto.tpop_from_aic(vec_ty, SPLIT_UP_DOWN, id=PIPE1_ID)
+        sum_tile = pto.alloc_tile(vec_ty)
+        tile.add(recv0_tile, recv1_tile, sum_tile)
+        pto.store(sum_tile, gm_y_tile_view)
+        pto.tfree_from_aic(SPLIT_UP_DOWN, id=PIPE0_ID)
+        pto.tfree_from_aic(SPLIT_UP_DOWN, id=PIPE1_ID)
 
     @pto.func
     def call_both(

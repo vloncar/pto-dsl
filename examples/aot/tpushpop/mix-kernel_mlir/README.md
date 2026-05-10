@@ -3,10 +3,10 @@
 Small examples of tile FIFO communication between Cube (`AIC`) and Vector (`AIV`).
 
 ```bash
-python run.py c2v
 python run.py c2v_add
 python run.py v2c
 python run.py bidi
+python run.py multi
 ```
 
 `python run.py` defaults to `c2v`.
@@ -28,7 +28,7 @@ Core idea:
 - `run.py` launches `get_num_cube_cores()` blocks for every mode.
 - Inputs and outputs are shaped as `[block_dim, 16, 16]`.
 - Each launched block pair gets its own `8 KiB` GM slot region and uses
-  `get_block_idx()` plus `addptr` so blocks do not overwrite each other's FIFO
+  `get_block_idx()` plus `add_ptr` so blocks do not overwrite each other's FIFO
   slots or input/output tiles.
 
 ## C2V
@@ -113,3 +113,25 @@ block pair gets its own `8 KiB` GM slot region:
 
 `run.py` allocates `get_num_cube_cores() * 8192` bytes of GM FIFO backing for
 each mode.
+
+## Multi
+
+Two same-direction logical pipes are enabled with explicit ids.
+
+This example launches one Cube/Vector block pair per cube core reported by
+`get_num_cube_cores()`. Each block computes `X[block] @ X[block]` once on
+Cube, then sends that tile through two separate C2V pipes. Vector pops both
+tiles by id, adds the two received row halves, and stores `Y[block]`.
+
+```text
+Cube:   matmul -> tpush_to_aiv id=0 -> tpush_to_aiv id=1
+Vector: tpop_from_aic id=0 -> tpop_from_aic id=1 -> add -> store -> tfree both
+```
+
+Pipe wiring:
+
+- Vector reserves `multi_c2v_fifo_0` and `multi_c2v_fifo_1`
+- Cube imports both named FIFO buffers from `@vector_kernel`
+- Both sides initialize two `dir_mask = 1` pipes with ids `0` and `1`
+- Each launched block pair gets two `8 KiB` GM slot regions, so `run.py multi`
+  allocates `get_num_cube_cores() * 16384` bytes of GM FIFO backing
