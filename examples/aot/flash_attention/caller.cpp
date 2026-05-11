@@ -23,7 +23,7 @@ extern "C" void call_kernel(
     (void)fftsLen;
 
     call_both<<<blockDim, nullptr, stream>>>(
-        (__gm__ int64_t *)fftsAddr,
+        (__gm__ uint64_t *)fftsAddr,
         (__gm__ float *)gmSlotBuffer,
         (__gm__ half *)q,
         (__gm__ half *)k,
