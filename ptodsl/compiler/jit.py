@@ -100,6 +100,7 @@ class JitWrapper:
         enable_insert_sync=True,
         init_ffts=None,
         npu_arch="dav-2201",
+        module=False,
     ):
         self._fn = fn
         self._orig_sig = inspect.signature(fn)
@@ -115,12 +116,17 @@ class JitWrapper:
         self._enable_insert_sync = enable_insert_sync
         self._init_ffts = init_ffts
         self._npu_arch = npu_arch
+        self._module = module
         self._compiled = False
         self._lib = None
         self._lib_path = self._output_dir / "kernel.so"
+        self._entry_name = None
         update_wrapper(self, fn)
 
-        if self._init_ffts is not None:
+        # When module=True, the user explicitly declares the ffts parameter
+        # in the entry function and calls pto.set_ffts() themselves.
+        # init_ffts is only used as a name hint for caller.cpp generation.
+        if self._init_ffts is not None and not self._module:
             original_fn = self._fn
 
             @wraps(original_fn)
@@ -178,6 +184,10 @@ class JitWrapper:
                 "    (void)rtGetC2cCtrlAddr(reinterpret_cast<uint64_t *>(&fftsAddr), &fftsLen);\n"
             )
 
+        # In module mode, the kernel launch name is the entry function name
+        # discovered from the IR module, not the builder function name.
+        launch_name = self._entry_name or self.__name__
+
         return (
             f'#include "{kernel_cpp_name}"\n'
             f"#include <cstdint>\n"
@@ -185,7 +195,7 @@ class JitWrapper:
             f'extern "C" void call_kernel({wrapper_sig})\n'
             "{\n"
             f"{ffts_init_code}"
-            f"    {self.__name__}<<<blockDim, nullptr, stream>>>({kernel_call});\n"
+            f"    {launch_name}<<<blockDim, nullptr, stream>>>({kernel_call});\n"
             "}\n"
         )
 
@@ -255,9 +265,27 @@ class JitWrapper:
     def _build(self):
         self._output_dir.mkdir(parents=True, exist_ok=True)
         pto_path, cpp_path, caller_path, lib_path = self._artifact_paths()
-        self._arg_types = self._resolve_runtime_arg_types()
 
-        ir_module = to_ir_module(meta_data=self._meta_data)(self._fn)
+        if self._module:
+            # Multi-function module mode: build the module and extract
+            # the entry function signature from the module-level metadata.
+            from .ir import get_last_entry_meta
+
+            ir_module = to_ir_module(meta_data=self._meta_data, module=True)(self._fn)
+            entry_meta = get_last_entry_meta()
+            if entry_meta is None or entry_meta.get("entry_name") is None:
+                raise RuntimeError(
+                    "module=True requires at least one `@pto.func` (without "
+                    "kernel=) as the entry point."
+                )
+            self._entry_name = entry_meta["entry_name"]
+            self._sig = entry_meta["entry_sig"]
+            self._arg_types = entry_meta["entry_arg_types"]
+        else:
+            # Single-function mode (original path).
+            self._arg_types = self._resolve_runtime_arg_types()
+            ir_module = to_ir_module(meta_data=self._meta_data)(self._fn)
+
         pto_path.write_text(f"{ir_module}\n", encoding="utf-8")
 
         ptoas_cmd = ["ptoas"]
@@ -368,6 +396,7 @@ def jit(
     enable_insert_sync=True,
     init_ffts=None,
     npu_arch="dav-2201",
+    module=False,
 ):
     def decorator(fn):
         return JitWrapper(
@@ -378,6 +407,7 @@ def jit(
             enable_insert_sync=enable_insert_sync,
             init_ffts=init_ffts,
             npu_arch=npu_arch,
+            module=module,
         )
 
     return decorator
